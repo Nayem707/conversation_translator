@@ -5,8 +5,10 @@ Pure JavaScript/HTML/CSS. No frameworks, no AI/LLM services.
 
 - **Speech → text:** Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`)
 - **Language detection:** Chrome's built-in language detector (`chrome.i18n.detectLanguage`, runs locally), with the translation provider's detected source and a Unicode-script heuristic as fallbacks
-- **Translation:** Google Translate free web endpoint, MyMemory, or your own LibreTranslate server (modular, see `translator.js`)
+- **Translation:** free, key-less web endpoints with automatic fallback: Google Translate (free web endpoint) → MyMemory → your own LibreTranslate server (see "Translation" below)
 - **Text → speech:** `speechSynthesis` with installed voices
+
+Zero cost for personal use: no AI/LLM, no paid API, no backend, no accounts, no analytics.
 
 ## Install
 
@@ -54,7 +56,7 @@ extension/
 ├── sidebar.html/css  panel UI (iframe from the extension origin, isolated from page CSS/JS)
 ├── sidebar.js        UI controller: speakers, detection, translation, history, settings
 ├── speech.js         SpeechSession (continuous STT with restart + segmentation), tts, on-device helpers
-├── translator.js     provider registry: google, mymemory, libre (+ registerProvider for new ones)
+├── translator.js     all translation code: providers, fallback, translateText()
 ├── audio.js          AudioCapture (playback, level meter), tab stream, getDisplayMedia, capability probe
 ├── offscreen.html/js tab-audio capture + playback + recognition, results broadcast by runtime messages
 ├── languages.js      language list, code normalisation, display names
@@ -62,17 +64,25 @@ extension/
 └── icons/
 ```
 
-Adding a translation backend:
+## Translation
 
-```js
-import { registerProvider } from './translator.js';
-registerProvider({
-  id: 'myapi', label: 'My API', supportsAuto: true, maxChars: 1000,
-  async translate({ text, source, target, signal, config }) { /* fetch… */ return { text, detectedSource: null }; },
-});
-```
+All translation code is in `extension/translator.js`. The UI only calls `configureTranslator(settings)`, `translateText(text, sourceLanguage, targetLanguage, options)` and `listProviders()`.
 
-Add its host to `host_permissions` (or request it at runtime) so the extension page can call it.
+| Provider | Request | Key | Notes |
+|---|---|---|---|
+| Google Translate (free web endpoint), default | `GET translate.googleapis.com/translate_a/single?client=gtx&sl&tl&dt=t&q` | none | Not the paid Cloud Translation API; no credentials or billing |
+| MyMemory, fallback | `GET api.mymemory.translated.net/get?q&langpair=src\|tgt` | none (optional email raises the daily quota) | Only exact memory matches and machine translations are accepted (see below) |
+| LibreTranslate, optional | `POST <your server>/translate` with `{ q, source, target, format: "text", api_key? }` | depends on your server | No public server is built in; set the URL in Settings |
+
+The selected provider is tried first, then the others in the order Google Translate → MyMemory → LibreTranslate. A provider counts as failed on a network error, an HTTP error, a rate limit or quota message, an invalid or empty response, or (LibreTranslate) a missing server URL. If every provider fails, the panel shows "Translation unavailable. All configured translation providers failed. Please check your internet connection or provider settings." with one line per provider; nothing is returned in place of a translation.
+
+Each translation shows the provider that produced it between the original and the translation (for example `↓ MyMemory`, plus `Fallback used — Google Translate (free web endpoint): rate limited (HTTP 429)`).
+
+MyMemory sometimes answers with a crowd-sourced memory entry for a *similar but different* sentence (for "Thank you for your help today" it returned a French sentence meaning "I hope your day is going well"). Such fuzzy matches are rejected so the next provider is tried instead.
+
+Settings are stored in `chrome.storage.local`. That includes the optional LibreTranslate API key, and extension storage is not a secure secret vault, so do not put sensitive production credentials there.
+
+Adding a provider: write a function that takes `{ text, source, target, signal, config }` and returns `{ text, detectedSource }` or throws a `TranslationError`, then call `registerProvider('id', { name, role, supportsAuto, maxChars, translate })`. It joins the end of the fallback order. Add its host to `host_permissions` (or request it at runtime) so the extension page can call it.
 
 ## Permissions and privacy
 
@@ -87,7 +97,7 @@ Add its host to `host_permissions` (or request it at runtime) so the extension p
 | Optional `https://*/*`, `http://*/*` | Only if you enable the button on all sites, or for a LibreTranslate origin |
 
 - Audio is never recorded or stored. Chrome's recognizer sends audio to Google's speech service unless on-device recognition is available and enabled (Settings).
-- Recognised text goes to the selected translation provider.
+- Recognised text goes only to the selected translation provider, and to the next provider only if that one fails. Nothing else is sent anywhere.
 - Capture is always visible: red "LIVE" badge in the panel header, red dot on the floating button, "ON" toolbar badge, and pills such as "Microphone active · Speaker A".
 - Closing the panel, reloading the page or closing the pop-out window stops every recognizer and capture. The offscreen worker also watches a port held by the panel.
 
@@ -100,16 +110,18 @@ Add its host to `host_permissions` (or request it at runtime) so the extension p
 - **Fullscreen:** elements outside the page's fullscreen element are hidden by the browser; use the pop-out window during fullscreen.
 - **Echo:** with speakers instead of headphones, the microphone hears translated speech. "Ignore microphone while reading a translation aloud" (default on) drops recognition results during TTS.
 - **One recognizer per microphone:** Speakers A and B cannot both listen to the mic at once (turn-taking). Mic + tab audio can run together.
-- **Free endpoints:** Google's free web endpoint is unofficial and can rate-limit. MyMemory has a daily quota (add an email in Settings to raise it). Use your own LibreTranslate for reliability.
+- **Free endpoints:** Google's free web endpoint is undocumented, can rate-limit, and could change without notice. MyMemory has a daily quota (add an email in Settings to raise it) and rejecting fuzzy matches means it occasionally declines a sentence. Run your own LibreTranslate for a fallback you control.
 - **TTS voices** depend on the OS; if no voice exists for the language the panel says so and the browser falls back to a default voice.
 
 ## Testing
 
 ```
 node tools/make-icons.mjs          # regenerate icons
-node tools/test-translator.mjs     # live provider checks from Node
+node tools/test-translator.mjs     # translation layer: live pairs + simulated provider failures
 cd tools/e2e && npm install && HEADFUL=1 node run.mjs   # (PowerShell: $env:HEADFUL=1; node run.mjs)
 ```
+
+`tools/test-translator.mjs` translates English ↔ Bangla and English ↔ French live with Google Translate and with MyMemory, then simulates outages by wrapping `fetch`: Google failing (network, HTTP 429, invalid JSON) → MyMemory; Google and MyMemory failing (HTTP 500, quota warning, fuzzy-only answer) → LibreTranslate, using a local mock LibreTranslate server; everything failing; and LibreTranslate selected without a URL.
 
 `tools/e2e/run.mjs` loads the unpacked extension into the installed Chrome via Puppeteer. A fake meeting page is served at a real `https://meet.google.com/...` URL through request interception. The run checks:
 
@@ -121,13 +133,13 @@ cd tools/e2e && npm install && HEADFUL=1 node run.mjs   # (PowerShell: $env:HEAD
 - tab audio captured, transcribed with `SpeechRecognition.start(track)`, segmented, and translated
 - offscreen cleanup after Stop
 - panel drag, minimize/restore without reloading, and toolbar-only injection on a normal page (example.com)
+- the "↓ provider" line, fallback to MyMemory with Google blocked, and the error with both blocked
+- the provider settings (LibreTranslate fields shown only when needed) and that settings survive a page reload
 
-Last run on Chrome 155 / Windows: **24/24 checks passed**.
+Last run on Chrome 155 / Windows: **33/33 checks passed**.
 
 Not verifiable by automation, so check these manually:
 
 - **Microphone transcription:** Chrome's recognizer ignores the fake-microphone file, but the same recognizer path is verified through the track input.
 - **Real logged-in Meet, Teams and Zoom meetings:** their live caption DOM may differ from the fixture.
 - **The `getDisplayMedia` share picker.**
-#   c o n v e r s a t i o n _ t r a n s l a t o r  
- 
