@@ -65,9 +65,14 @@ const consoleErrors = [];
 page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()));
 page.on('pageerror', (e) => consoleErrors.push(e.message));
 
+const blockedHosts = new Set(); // simulate translation provider outages
+let providerRequests = [];
 await page.setRequestInterception(true);
 page.on('request', (req) => {
   const url = req.url();
+  const host = new URL(url).host;
+  if (/translate\.googleapis\.com|mymemory\.translated\.net/.test(host)) providerRequests.push(host);
+  if (blockedHosts.has(host)) return req.abort('blockedbyclient');
   if (url.startsWith('https://meet.google.com/__fixtures/')) {
     return req.respond({ status: 200, contentType: 'audio/wav', body: readFileSync(join(FIX, url.split('/').pop())) });
   }
@@ -147,9 +152,42 @@ const maria = capEntries?.find((e) => e.head?.includes('Maria'));
 const you = capEntries?.find((e) => e.head?.includes('You'));
 record('caption (Spanish) translated to English for Speaker B', !!maria?.trans && /meeting|tomorrow/i.test(maria.trans), JSON.stringify(maria));
 record('own "You" caption routed to Speaker A and translated to Spanish', you?.speaker === 'A' && !!you?.trans, JSON.stringify(you));
-note('translation provider used from the extension', await text(`${B} [data-role="translatedTo"]`));
+record('provider shown between original and translation', (await text(`${B} [data-role="via"]`)) === '↓ Google Translate (free web endpoint)', await text(`${B} [data-role="via"]`));
+record('log entry names the provider', (await frame.$$eval('#log li .via', (els) => els.map((e) => e.textContent))).every((t) => t.includes('Google Translate')));
 record('detected language shown', /Spanish|English/.test(await text(`${B} [data-role="detected"]`)), await text(`${B} [data-role="detected"]`));
 await page.screenshot({ path: join(OUT, '2-captions-translated.png') });
+
+// ------------------------------------------------- provider fallback in the extension
+const captionOnce = async (line) => {
+  const n = (await logEntries()).length;
+  await page.evaluate((l) => window.runCaptions([l]), line);
+  return waitFor(async () => {
+    const e = (await logEntries())[n];
+    return e && e.trans !== 'Translating…' && (e.trans || e.err) ? e : null;
+  }, 20000);
+};
+// Scroll inside the sidebar document only (scrollIntoView would also scroll the host page).
+const scrollPanelTo = (f, sel) => f.$eval(sel, (el) => scrollBy(0, el.getBoundingClientRect().top - 60));
+const viaB = () => frame.$eval(`${B} [data-role="via"]`, (el) => el.textContent.trim()).catch(() => '');
+providerRequests = [];
+const googleSeen = await captionOnce({ name: 'Maria', text: 'Necesito el informe antes del viernes.' });
+record('provider requests visible to the test harness', providerRequests.length > 0, providerRequests.join(', ') || JSON.stringify(googleSeen));
+blockedHosts.add('translate.googleapis.com');
+const viaMyMemory = await captionOnce({ name: 'Maria', text: '¿Puedes enviarme la presentación después de la llamada?' });
+record('Google blocked -> MyMemory answers, shown as "↓ MyMemory"', !!viaMyMemory?.trans && (await viaB()).startsWith('↓ MyMemory'), `${JSON.stringify(viaMyMemory)} | via=${await viaB()}`);
+await scrollPanelTo(frame, `${B} [data-role="originalLabel"]`);
+await page.screenshot({ path: join(OUT, '2b-fallback-mymemory.png') });
+blockedHosts.add('api.mymemory.translated.net');
+const allDown = await captionOnce({ name: 'Maria', text: 'Hablamos mañana por la tarde.' });
+record(
+  'all providers down -> "Translation unavailable" error, no translation',
+  !allDown?.trans && /Translation unavailable/.test(allDown?.err || '') && /Translation unavailable/.test(await text(`${B} [data-role="translation"]`)),
+  JSON.stringify(allDown),
+);
+await scrollPanelTo(frame, `${B} [data-role="originalLabel"]`);
+await page.screenshot({ path: join(OUT, '2c-all-providers-failed.png') });
+await frame.evaluate(() => scrollTo(0, 0));
+blockedHosts.clear();
 await clickIn(`${B} [data-action="stop"]`);
 
 // ----------------------------------------------------------- microphone source
@@ -250,6 +288,38 @@ if (frame2) {
   const caps = await frame2.$$eval('#caps li', (lis) => lis.map((li) => li.textContent.trim()));
   console.log('\nCapability panel on example.com:\n  ' + caps.join('\n  '));
   await page2.screenshot({ path: join(OUT, '7-normal-page.png') });
+
+  // ---------------------------------------------------------- provider settings
+  const options = await frame2.$$eval('#provider option', (os) => os.map((o) => o.textContent));
+  record('provider choices: Google (default), MyMemory (fallback), LibreTranslate (optional)', options.join('|') === 'Google Translate (free web endpoint) — Default|MyMemory — Fallback|LibreTranslate — Optional', options.join(' | '));
+  const libreHidden = await frame2.$eval('#libreFields', (el) => el.hidden);
+  record('LibreTranslate fields hidden while Google is selected', libreHidden);
+  await frame2.$eval('#settingsSection', (el) => (el.open = true));
+  await frame2.select('#provider', 'libretranslate');
+  const libreShown = await frame2.$eval('#libreFields', (el) => !el.hidden && el.querySelector('#libreUnconfigured:not([hidden])') !== null);
+  record('selecting LibreTranslate shows server URL + API key fields and a "not configured" hint', libreShown);
+  await frame2.$eval('#mymemoryEmail', (el) => {
+    el.value = 'me@example.com';
+    el.dispatchEvent(new Event('change'));
+  });
+  await scrollPanelTo(frame2, '#settingsSection');
+  await page2.screenshot({ path: join(OUT, '8-settings-libre.png') });
+  await sleep(300);
+
+  // Reload the page: a fresh sidebar must read the settings back from chrome.storage.local.
+  await page2.reload({ waitUntil: 'load' });
+  await ext.triggerAction(page2);
+  const frame3 = await waitFor(async () => {
+    const f = page2.frames().find((x) => x.url().includes('/sidebar.html'));
+    return f && (await f.$('#provider option')) ? f : null;
+  }, 8000);
+  const persisted = frame3 && (await frame3.evaluate(() => ({
+    provider: document.getElementById('provider').value,
+    email: document.getElementById('mymemoryEmail').value,
+    libreVisible: !document.getElementById('libreFields').hidden,
+  })));
+  record('settings persist across a page reload', persisted?.provider === 'libretranslate' && persisted.email === 'me@example.com' && persisted.libreVisible, JSON.stringify(persisted));
+  await frame3?.select('#provider', 'google');
 }
 
 const relevantErrors = consoleErrors.filter((e) => !/favicon|ERR_BLOCKED/i.test(e));
