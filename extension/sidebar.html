@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Live Translator</title>
+    <link rel="stylesheet" href="sidebar.css" />
+  </head>
+  <body>
+    <header class="window-header">
+      <img src="icons/icon32.png" alt="" width="20" height="20" />
+      <strong>Live Translator</strong>
+      <span class="target-tab" id="targetTab"></span>
+    </header>
+
+    <div class="indicators" id="indicators" aria-live="polite"></div>
+
+    <section class="langs" aria-label="Languages">
+      <label class="field">
+        <span>Source language <em>(Speaker A)</em></span>
+        <select id="srcLang"></select>
+      </label>
+      <button type="button" class="icon-btn swap" id="swapBtn" title="Swap languages" aria-label="Swap languages">&#8644;</button>
+      <label class="field">
+        <span>Target language <em>(Speaker B)</em></span>
+        <select id="tgtLang"></select>
+      </label>
+    </section>
+
+    <div id="speakers"></div>
+
+    <section class="conversation" aria-label="Conversation">
+      <div class="section-head">
+        <h2>Conversation</h2>
+        <label class="toggle" title="Off: transcript lives only in memory and disappears when the panel closes.">
+          <input type="checkbox" id="historyToggle" />
+          <span>Save history</span>
+        </label>
+        <button type="button" class="btn small ghost" id="clearBtn">Clear Conversation</button>
+      </div>
+      <ol class="log" id="log"></ol>
+      <p class="empty" id="logEmpty">Nothing yet. Press <b>Start Listening</b> and speak.</p>
+    </section>
+
+    <details class="panel-section" id="settingsSection">
+      <summary>Settings</summary>
+      <div class="settings">
+        <label class="field">
+          <span>Translation provider</span>
+          <select id="provider"></select>
+        </label>
+        <label class="toggle"><input type="checkbox" id="fallback" /> <span>Fall back to other providers on failure</span></label>
+        <label class="toggle"><input type="checkbox" id="liveInterim" /> <span>Translate while speaking (more requests)</span></label>
+        <label class="toggle"><input type="checkbox" id="muteWhileSpeaking" /> <span>Ignore microphone while reading a translation aloud</span></label>
+        <label class="toggle"><input type="checkbox" id="onDevice" /> <span>Prefer on-device speech recognition</span></label>
+        <p class="hint" id="onDeviceStatus"></p>
+        <label class="field">
+          <span>Speech rate <output id="rateOut"></output></span>
+          <input type="range" id="rate" min="0.6" max="1.6" step="0.1" />
+        </label>
+        <fieldset class="libre">
+          <legend>LibreTranslate</legend>
+          <label class="field"><span>Server URL</span><input type="url" id="libreUrl" placeholder="https://libretranslate.example.com" /></label>
+          <label class="field"><span>API key (optional)</span><input type="password" id="libreKey" autocomplete="off" /></label>
+          <button type="button" class="btn small" id="libreSave">Save &amp; allow access</button>
+          <p class="hint" id="libreStatus"></p>
+        </fieldset>
+        <label class="field">
+          <span>MyMemory contact email (optional, raises daily quota)</span>
+          <input type="email" id="mymemoryEmail" placeholder="you@example.com" />
+        </label>
+        <button type="button" class="btn small ghost" id="openOptions">Permissions &amp; help</button>
+      </div>
+    </details>
+
+    <details class="panel-section">
+      <summary>What can this extension hear?</summary>
+      <ul class="caps" id="caps"></ul>
+    </details>
+
+    <p class="privacy">
+      Audio is never stored. Microphone/tab recognition is performed by the browser&rsquo;s speech service
+      (Chrome sends audio to Google unless on-device recognition is used). Recognised text is sent to the selected
+      translation provider.
+    </p>
+
+    <template id="speakerTemplate">
+      <section class="speaker">
+        <div class="speaker-head">
+          <span class="badge"></span>
+          <div class="who">
+            <strong class="speaker-name"></strong>
+            <span class="speaker-sub"></span>
+          </div>
+          <span class="state" data-role="state">Idle</span>
+        </div>
+        <label class="field input-row" data-role="inputRow">
+          <span>Input</span>
+          <select data-role="input"></select>
+        </label>
+        <div class="row">
+          <button type="button" class="btn primary" data-action="start">&#127908; Start Listening</button>
+          <button type="button" class="btn" data-action="stop" disabled>&#9209; Stop</button>
+        </div>
+        <div class="meter" data-role="meter" hidden><span></span></div>
+        <dl class="meta">
+          <div><dt>Detected language</dt><dd data-role="detected">&mdash;</dd></div>
+          <div><dt>Translated language</dt><dd data-role="translatedTo">&mdash;</dd></div>
+        </dl>
+        <div class="text-label">Original Text</div>
+        <div class="text-box original" data-role="original" aria-live="polite"></div>
+        <div class="text-label">Translation</div>
+        <div class="text-box translation" data-role="translation" aria-live="polite"></div>
+        <div class="row">
+          <button type="button" class="btn" data-action="speak" disabled>&#128266; Speak Translation</button>
+          <label class="toggle"><input type="checkbox" data-role="autoSpeak" /> <span>Auto-speak</span></label>
+        </div>
+        <div class="notice" data-role="notice" hidden></div>
+      </section>
+    </template>
+
+    <script type="module" src="sidebar.js"></script>
+  </body>
+</html>

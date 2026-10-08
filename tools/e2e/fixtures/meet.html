@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Fake meeting (test fixture)</title>
+    <style>
+      body { margin: 0; height: 100vh; background: #202124; color: #e8eaed; font: 16px system-ui, sans-serif; }
+      .stage { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 24px; height: 60vh; }
+      .tile { background: #3c4043; border-radius: 12px; display: grid; place-items: center; font-size: 22px; }
+      .captions { position: fixed; left: 24px; bottom: 24px; width: 45%; }
+      .nMcdL { background: rgba(0, 0, 0, .6); border-radius: 8px; padding: 8px 12px; margin-top: 6px; }
+      .NWpY1d { font-weight: 600; font-size: 13px; color: #8ab4f8; }
+    </style>
+  </head>
+  <body>
+    <div class="stage"><div class="tile">Maria</div><div class="tile">You</div></div>
+    <audio id="participant" src="/__fixtures/participant.wav"></audio>
+    <!-- Mimics the structure Google Meet uses for live captions. -->
+    <div class="captions" role="region" aria-label="Captions"></div>
+    <script>
+      const region = document.querySelector('.captions');
+      const participant = document.getElementById('participant');
+      participant.addEventListener('ended', () => setTimeout(() => participant.play(), 2000));
+      window.runCaptions = async (lines) => {
+        for (const { name, text } of lines) {
+          const block = document.createElement('div');
+          block.className = 'nMcdL';
+          block.innerHTML = '<div class="KcIKyf"><span class="NWpY1d"></span></div><div class="ygicle"></div>';
+          block.querySelector('.NWpY1d').textContent = name;
+          region.append(block);
+          const target = block.querySelector('.ygicle');
+          for (const word of text.split(' ')) {
+            target.textContent = (target.textContent + ' ' + word).trim();
+            await new Promise((r) => setTimeout(r, 120));
+          }
+          await new Promise((r) => setTimeout(r, 2500));
+        }
+      };
+    </script>
+  </body>
+</html>

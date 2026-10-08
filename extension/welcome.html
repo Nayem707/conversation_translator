@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Live Translator &ndash; Permissions &amp; help</title>
+    <link rel="stylesheet" href="welcome.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="icons/icon48.png" alt="" width="40" height="40" />
+        <div>
+          <h1>Live Conversation Translator</h1>
+          <p>Real-time two-way translation using the browser&rsquo;s Web Speech API and classic translation services. No AI/LLMs.</p>
+        </div>
+      </header>
+
+      <section id="mic">
+        <h2>1. Microphone access</h2>
+        <p>
+          The translator panel runs inside the web page as an extension frame. Chrome attributes its microphone
+          permission to the extension, and some sites never show the prompt for embedded frames, so grant it once here.
+        </p>
+        <div class="row">
+          <button type="button" id="micBtn">Allow microphone</button>
+          <span class="status" id="micStatus"></span>
+        </div>
+      </section>
+
+      <section>
+        <h2>2. Where the floating button appears</h2>
+        <p>
+          By default the button is added only on Google Meet, Microsoft Teams and Zoom Web. On any other page, click the
+          toolbar icon (or press <kbd id="shortcut">Alt+Shift+T</kbd>) to open the translator.
+        </p>
+        <label class="toggle">
+          <input type="checkbox" id="allSites" />
+          <span>Show the floating button on every website (asks for access to all sites)</span>
+        </label>
+        <span class="status" id="allSitesStatus"></span>
+      </section>
+
+      <section>
+        <h2>3. What the extension can and cannot hear</h2>
+        <table>
+          <thead>
+            <tr><th>Source</th><th>Possible?</th><th>How / requirement</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Your microphone</td>
+              <td class="yes">Yes</td>
+              <td>Web Speech API <code>SpeechRecognition</code>. Microphone permission prompt.</td>
+            </tr>
+            <tr>
+              <td>Participants in Meet / Teams / Zoom Web (tab audio)</td>
+              <td class="yes">Yes, Chrome 135+</td>
+              <td>
+                <code>chrome.tabCapture</code>. Only after you click the toolbar icon or use the shortcut on that tab.
+                Captured audio is replayed so you keep hearing it, then transcribed with
+                <code>SpeechRecognition.start(track)</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>System audio (other apps, Zoom/Teams desktop)</td>
+              <td class="partial">Partly</td>
+              <td>Screen-share picker with &ldquo;Share system audio&rdquo;. Windows and ChromeOS only; macOS/Linux share tab audio only.</td>
+            </tr>
+            <tr>
+              <td>Meeting captions shown on screen</td>
+              <td class="partial">Experimental</td>
+              <td>Reads captions Meet/Teams/Zoom Web render on the page. Turn on captions in the meeting first. Depends on each platform&rsquo;s page structure.</td>
+            </tr>
+            <tr>
+              <td>Direct access to another app&rsquo;s internal audio stream</td>
+              <td class="no">No</td>
+              <td>Not exposed to extensions or content scripts. Content scripts cannot capture audio at all.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>4. Privacy</h2>
+        <ul>
+          <li>Audio is never recorded or stored by the extension.</li>
+          <li>
+            Chrome&rsquo;s speech recognizer sends audio to Google&rsquo;s speech service unless on-device recognition
+            is available and enabled.
+          </li>
+          <li>Recognised text is sent to the translation provider you choose (Google Translate, MyMemory, or your LibreTranslate server).</li>
+          <li>The conversation is kept in memory only, unless you turn on &ldquo;Save history&rdquo;. Turning it off deletes saved history.</li>
+          <li>A red &ldquo;LIVE&rdquo; badge, a red dot on the floating button and an &ldquo;ON&rdquo; toolbar badge show when audio is being captured.</li>
+        </ul>
+      </section>
+    </main>
+    <script type="module" src="welcome.js"></script>
+  </body>
+</html>
