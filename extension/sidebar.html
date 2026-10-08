@@ -49,7 +49,23 @@
           <span>Translation provider</span>
           <select id="provider"></select>
         </label>
-        <label class="toggle"><input type="checkbox" id="fallback" /> <span>Fall back to other providers on failure</span></label>
+        <p class="hint">
+          Free providers only, no API keys or AI. If the selected one fails, the others are tried automatically
+          (Google Translate &rarr; MyMemory &rarr; LibreTranslate).
+        </p>
+        <fieldset class="libre" id="libreFields" hidden>
+          <legend>LibreTranslate</legend>
+          <p class="hint warn" id="libreUnconfigured" hidden>Enter your server URL; until then the other providers are used.</p>
+          <label class="field"><span>Server URL</span><input type="url" id="libreUrl" placeholder="https://libretranslate.example.com" /></label>
+          <label class="field"><span>API key (optional, depends on the server)</span><input type="password" id="libreKey" autocomplete="off" /></label>
+          <p class="hint">Saved only in this browser&rsquo;s extension storage, which is not a secure vault.</p>
+          <button type="button" class="btn small" id="libreSave">Save &amp; allow access</button>
+          <p class="hint" id="libreStatus"></p>
+        </fieldset>
+        <label class="field">
+          <span>MyMemory contact email (optional, raises daily quota)</span>
+          <input type="email" id="mymemoryEmail" placeholder="you@example.com" />
+        </label>
         <label class="toggle"><input type="checkbox" id="liveInterim" /> <span>Translate while speaking (more requests)</span></label>
         <label class="toggle"><input type="checkbox" id="muteWhileSpeaking" /> <span>Ignore microphone while reading a translation aloud</span></label>
         <label class="toggle"><input type="checkbox" id="onDevice" /> <span>Prefer on-device speech recognition</span></label>
@@ -57,17 +73,6 @@
         <label class="field">
           <span>Speech rate <output id="rateOut"></output></span>
           <input type="range" id="rate" min="0.6" max="1.6" step="0.1" />
-        </label>
-        <fieldset class="libre">
-          <legend>LibreTranslate</legend>
-          <label class="field"><span>Server URL</span><input type="url" id="libreUrl" placeholder="https://libretranslate.example.com" /></label>
-          <label class="field"><span>API key (optional)</span><input type="password" id="libreKey" autocomplete="off" /></label>
-          <button type="button" class="btn small" id="libreSave">Save &amp; allow access</button>
-          <p class="hint" id="libreStatus"></p>
-        </fieldset>
-        <label class="field">
-          <span>MyMemory contact email (optional, raises daily quota)</span>
-          <input type="email" id="mymemoryEmail" placeholder="you@example.com" />
         </label>
         <button type="button" class="btn small ghost" id="openOptions">Permissions &amp; help</button>
       </div>
@@ -80,8 +85,8 @@
 
     <p class="privacy">
       Audio is never stored. Microphone/tab recognition is performed by the browser&rsquo;s speech service
-      (Chrome sends audio to Google unless on-device recognition is used). Recognised text is sent to the selected
-      translation provider.
+      (Chrome sends audio to Google unless on-device recognition is used). Recognised text is sent only to the selected
+      translation provider, and to the next provider only if that one fails. No analytics, accounts, or backend.
     </p>
 
     <template id="speakerTemplate">
@@ -107,9 +112,10 @@
           <div><dt>Detected language</dt><dd data-role="detected">&mdash;</dd></div>
           <div><dt>Translated language</dt><dd data-role="translatedTo">&mdash;</dd></div>
         </dl>
-        <div class="text-label">Original Text</div>
+        <div class="text-label" data-role="originalLabel">Original Text</div>
         <div class="text-box original" data-role="original" aria-live="polite"></div>
-        <div class="text-label">Translation</div>
+        <div class="via" data-role="via" hidden></div>
+        <div class="text-label" data-role="translationLabel">Translation</div>
         <div class="text-box translation" data-role="translation" aria-live="polite"></div>
         <div class="row">
           <button type="button" class="btn" data-action="speak" disabled>&#128266; Speak Translation</button>

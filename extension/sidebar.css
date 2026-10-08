@@ -129,6 +129,10 @@ select:focus, input:focus-visible, button:focus-visible { outline: 2px solid var
   background: var(--bg); border: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .text-box.translation { font-size: 14px; font-weight: 500; }
+.text-box.translation.failed { font-size: 12.5px; color: var(--danger); background: var(--err-bg); }
+.via { margin: 5px 0 0; font-size: 11.5px; font-weight: 600; color: var(--accent); }
+.via[hidden] { display: none; }
+.via small { display: block; font-weight: 400; color: var(--muted); }
 .text-box .interim { color: var(--muted); font-style: italic; }
 .text-box:empty::before { content: "\2014"; color: var(--muted); }
 .text-box + .row { margin-top: 8px; }
@@ -155,7 +159,9 @@ select:focus, input:focus-visible, button:focus-visible { outline: 2px solid var
 .log .entry-head button { margin-left: auto; border: 0; background: none; cursor: pointer; font-size: 13px; padding: 0 2px; color: inherit; }
 .log .orig { margin-top: 2px; }
 .log .trans { margin-top: 2px; font-weight: 600; }
-.log .err { color: var(--danger); font-size: 11.5px; }
+.log .via { margin-top: 2px; font-size: 10.5px; }
+.log .err { color: var(--danger); font-size: 11.5px; white-space: pre-line; }
+.log .err small { display: block; color: var(--muted); }
 .empty { color: var(--muted); margin: 8px 0 0; font-size: 12px; }
 .empty[hidden] { display: none; }
 
@@ -164,8 +170,11 @@ select:focus, input:focus-visible, button:focus-visible { outline: 2px solid var
 .settings { display: flex; flex-direction: column; gap: 9px; margin-top: 10px; }
 .settings input[type="range"] { width: 100%; }
 .libre { border: 1px solid var(--border); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.libre[hidden] { display: none; }
 .libre legend { font-size: 11.5px; font-weight: 600; color: var(--muted); }
 .hint { margin: 0; font-size: 11.5px; color: var(--muted); }
+.hint.warn { color: var(--warn); }
+.hint[hidden] { display: none; }
 .hint:empty { display: none; }
 
 .caps { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
