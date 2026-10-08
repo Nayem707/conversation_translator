@@ -1,6 +1,6 @@
 // Sidebar controller: wires the UI to the speech, audio, and translation modules.
 import { LANGUAGES, languageName, normalizeLang, sameLanguage, bestMatch } from './languages.js';
-import { translate, listProviders } from './translator.js';
+import { translateText, configureTranslator, listProviders, describeAttempts } from './translator.js';
 import {
   SpeechSession,
   tts,
@@ -39,7 +39,6 @@ const DEFAULTS = {
   tgtLang: normalizeLang(userLang) === 'en' ? 'es-ES' : 'en-US',
   inputB: 'mic',
   provider: 'google',
-  fallback: true,
   liveInterim: true,
   muteWhileSpeaking: true,
   onDevice: false,
@@ -74,6 +73,10 @@ async function init() {
   }
   const stored = await chrome.storage.local.get(['settings', 'history']);
   settings = { ...DEFAULTS, ...stored.settings };
+  delete settings.fallback;
+  if (settings.provider === 'libre') settings.provider = 'libretranslate';
+  if (!listProviders().some((p) => p.id === settings.provider)) settings.provider = DEFAULTS.provider;
+  configureTranslator(settings);
   if (!LANGUAGES.some((l) => l.code === settings.srcLang)) settings.srcLang = DEFAULTS.srcLang;
   if (!LANGUAGES.some((l) => l.code === settings.tgtLang)) settings.tgtLang = DEFAULTS.tgtLang;
   if (settings.history && Array.isArray(stored.history)) log = stored.history.slice(-HISTORY_MAX);
@@ -127,6 +130,9 @@ function createSpeaker(id) {
       detected: role('detected'),
       translatedTo: role('translatedTo'),
       original: role('original'),
+      originalLabel: role('originalLabel'),
+      via: role('via'),
+      translationLabel: role('translationLabel'),
       translation: role('translation'),
       autoSpeak: role('autoSpeak'),
       notice: role('notice'),
@@ -443,11 +449,8 @@ function scheduleInterimTranslation(sp, text) {
     sp.interimCtrl?.abort();
     const ctrl = (sp.interimCtrl = new AbortController());
     try {
-      const r = await translate(t, {
-        source: 'auto',
+      const r = await translateText(t, 'auto', targetLang(sp.id), {
         sourceHint: spokenLang(sp.id),
-        target: targetLang(sp.id),
-        ...translatorOptions(),
         fallback: false,
         signal: ctrl.signal,
       });
@@ -503,39 +506,30 @@ async function handleFinal(sp, text, { kind, who }) {
   if (entry.translation && settings[`autoSpeak${sp.id}`]) speakEntry(entry, sp);
 }
 
-function translatorOptions() {
-  return {
-    provider: settings.provider,
-    fallback: settings.fallback,
-    config: { libreUrl: settings.libreUrl, libreKey: settings.libreKey, mymemoryEmail: settings.mymemoryEmail },
-  };
-}
-
 async function translateEntry(entry) {
   entry.pending = true;
-  entry.error = '';
+  entry.error = entry.errorDetail = entry.providerNote = entry.provider = '';
   const det = entry.detected;
   if (det?.reliable && sameLanguage(det.code, entry.target)) {
     entry.translation = entry.original;
-    entry.provider = 'Already in the target language';
+    entry.provider = 'No translation needed (already in the target language)';
     entry.pending = false;
     return;
   }
   try {
-    const r = await translate(entry.original, {
-      source: 'auto',
+    const r = await translateText(entry.original, 'auto', entry.target, {
       sourceHint: det?.reliable ? det.code : entry.spokenAs || det?.code || 'en',
-      target: entry.target,
-      ...translatorOptions(),
     });
     entry.translation = r.text;
-    entry.provider = r.providerLabel || '';
+    entry.provider = r.providerName;
+    entry.providerNote = describeAttempts(r.attempts.filter((a) => !a.skipped || a.provider === settings.provider));
     if (r.detectedSource && (!det || !det.reliable)) {
       entry.detected = { code: r.detectedSource, percent: null, reliable: true, via: 'translation provider' };
     }
   } catch (err) {
     entry.translation = '';
-    entry.error = `Translation failed: ${err.message}`;
+    entry.error = err.message || 'Translation failed.';
+    entry.errorDetail = describeAttempts(err.attempts);
   }
   entry.pending = false;
 }
@@ -689,7 +683,34 @@ function renderMeta(sp) {
     setMeta(sp.el.detected, `${languageName(d.code)} (${d.code})`, `${d.via}${pct}${caution}`);
   }
   const target = e?.target || targetLang(sp.id);
-  setMeta(sp.el.translatedTo, languageName(target), e?.provider || '');
+  setMeta(sp.el.translatedTo, languageName(target), '');
+}
+
+function sourceName(e) {
+  const code = e?.detected?.code || e?.spokenAs;
+  return code ? languageName(code) : '';
+}
+
+// The "↓ provider" line between the original and the translation.
+function fillVia(el, e) {
+  el.replaceChildren();
+  let main = '';
+  let detail = '';
+  if (e?.pending) main = '\u2193 Translating\u2026';
+  else if (e?.provider) {
+    main = `\u2193 ${e.provider}`;
+    if (e.providerNote) detail = `Fallback used \u2014 ${e.providerNote.replace(/\n/g, '; ')}`;
+  } else if (e?.error) {
+    main = '\u2193 No provider could translate this';
+    detail = (e.errorDetail || '').replace(/\n/g, '; ');
+  }
+  el.hidden = !main;
+  el.append(main);
+  if (detail) {
+    const small = document.createElement('small');
+    small.textContent = detail;
+    el.append(small);
+  }
 }
 
 function appendInterim(box, finalText, interim) {
@@ -712,6 +733,11 @@ function renderTranslation(sp) {
   const e = sp.last;
   const finalText = e ? e.translation || (e.pending ? 'Translating\u2026' : e.error) : '';
   appendInterim(sp.el.translation, finalText, sp.interim ? sp.interimTranslation : '');
+  sp.el.translation.classList.toggle('failed', !!(e && !e.translation && !e.pending && e.error));
+  const from = sourceName(e);
+  sp.el.originalLabel.textContent = from ? `Original Text \u00B7 ${from}` : 'Original Text';
+  sp.el.translationLabel.textContent = `Translation \u00B7 ${languageName(e?.target || targetLang(sp.id))}`;
+  fillVia(sp.el.via, e);
 }
 
 function formatTime(ts) {
@@ -744,15 +770,23 @@ function buildEntry(e) {
   orig.textContent = e.original;
   li.append(head, orig);
   if (e.translation || e.pending) {
+    const via = document.createElement('div');
+    via.className = 'via';
+    fillVia(via, e);
     const trans = document.createElement('div');
     trans.className = 'trans';
     trans.textContent = e.translation || 'Translating\u2026';
-    li.append(trans);
+    li.append(via, trans);
   }
   if (e.error) {
     const err = document.createElement('div');
     err.className = 'err';
     err.textContent = e.error;
+    if (e.errorDetail) {
+      const small = document.createElement('small');
+      small.textContent = e.errorDetail;
+      err.append(small);
+    }
     li.append(err);
   }
   return li;
@@ -914,7 +948,11 @@ async function updateOnDeviceStatus() {
 // Global controls & settings
 // ---------------------------------------------------------------------------
 
+// Settings, including the optional LibreTranslate API key, live only in
+// chrome.storage.local. Extension storage is not a secure secret vault: do not
+// store sensitive production credentials there.
 function saveSettings() {
+  configureTranslator(settings);
   chrome.storage.local.set({ settings }).catch(() => {});
 }
 
@@ -966,14 +1004,16 @@ function bindGlobalControls() {
   });
 
   const provider = $('provider');
-  for (const p of listProviders()) provider.add(new Option(p.label, p.id));
+  for (const p of listProviders()) provider.add(new Option(p.role ? `${p.name} \u2014 ${p.role}` : p.name, p.id));
   provider.value = settings.provider;
   provider.addEventListener('change', () => {
     settings.provider = provider.value;
     saveSettings();
+    renderProviderSettings();
   });
+  renderProviderSettings();
 
-  for (const key of ['fallback', 'liveInterim', 'muteWhileSpeaking', 'onDevice']) {
+  for (const key of ['liveInterim', 'muteWhileSpeaking', 'onDevice']) {
     const box = $(key);
     box.checked = !!settings[key];
     box.addEventListener('change', () => {
@@ -1031,6 +1071,12 @@ function bindGlobalControls() {
   });
 }
 
+function renderProviderSettings() {
+  const libre = settings.provider === 'libretranslate';
+  $('libreFields').hidden = !libre && !settings.libreUrl;
+  $('libreUnconfigured').hidden = !libre || !!settings.libreUrl;
+}
+
 async function saveLibre() {
   const status = $('libreStatus');
   const url = $('libreUrl').value.trim();
@@ -1038,6 +1084,7 @@ async function saveLibre() {
   if (!url) {
     settings.libreUrl = '';
     saveSettings();
+    renderProviderSettings();
     status.textContent = 'Cleared.';
     return;
   }
@@ -1061,7 +1108,11 @@ async function saveLibre() {
   }
   settings.libreUrl = url;
   saveSettings();
-  status.textContent = `Saved. Select \u201CLibreTranslate\u201D as the provider to use ${origin}.`;
+  renderProviderSettings();
+  status.textContent =
+    settings.provider === 'libretranslate'
+      ? `Saved. Translations now go to ${origin}.`
+      : `Saved. ${origin} is used if the other providers fail, or select LibreTranslate as the provider.`;
 }
 
 function onRuntimeMessage(msg) {
